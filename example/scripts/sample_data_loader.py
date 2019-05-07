@@ -26,7 +26,7 @@ from databuilder.transformer.elasticsearch_document_transformer import Elasticse
 
 # change to the address of Elasticsearh service
 es = Elasticsearch([
-    {'host': '0.0.0.0'},
+    {'host': '127.0.0.1'},
 ])
 
 DB_FILE = '/tmp/test.db'
