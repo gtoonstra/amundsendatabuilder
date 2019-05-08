@@ -69,6 +69,7 @@ class User(Neo4jCsvSerializable):
         self.employee_type = employee_type
         # this attr not available in team service, either update team service, update with FE
         self.slack_id = slack_id
+
         self.is_active = is_active
         self.updated_at = updated_at
 
