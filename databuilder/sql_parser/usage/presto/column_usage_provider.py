@@ -8,6 +8,7 @@ from databuilder.sql_parser.usage.presto.antlr_generated.SqlBaseListener import 
 from databuilder.sql_parser.usage.presto.antlr_generated.SqlBaseParser import SqlBaseParser
 
 
+logging.basicConfig(level=logging.DEBUG)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -37,7 +38,7 @@ class ColumnUsageListener(SqlBaseListener):
                             ctx  # type: SqlBaseParser.ColumnReferenceContext
                             ):
         # type: (...) -> None
-
+        LOGGER.info("exitColumnReference :" + ctx.getText())
         """
         Call back method for column that does not have table indicator
         :param ctx:
@@ -54,6 +55,7 @@ class ColumnUsageListener(SqlBaseListener):
         :param ctx:
         :return:
         """
+        LOGGER.info("exitDereference :" + ctx.getText())
         self._current_col = Column(ctx.identifier().getText(),
                                    table=Table(ctx.base.getText()))
 
@@ -68,6 +70,7 @@ class ColumnUsageListener(SqlBaseListener):
         :param ctx:
         :return:
         """
+        LOGGER.info("exitSelectSingle :" + ctx.getText())
         if not self._current_col:
             return
 
@@ -86,6 +89,7 @@ class ColumnUsageListener(SqlBaseListener):
         :param ctx:
         :return:
         """
+        LOGGER.info("exitSelectAll :" + ctx.getText())
         self._current_col = Column('*')
         if ctx.qualifiedName():
             self._current_col.table = Table(ctx.qualifiedName().getText())
@@ -102,6 +106,7 @@ class ColumnUsageListener(SqlBaseListener):
         :param ctx:
         :return:
         """
+        LOGGER.info("exitTableName :" + ctx.getText())
         table_name = ctx.getText()
         table = Table(table_name)
         if '.' in table_name:
@@ -120,6 +125,7 @@ class ColumnUsageListener(SqlBaseListener):
         :param ctx:
         :return:
         """
+        LOGGER.info("exitAliasedRelation :" + ctx.getText())
         if not ctx.identifier():
             return
 
@@ -142,6 +148,7 @@ class ColumnUsageListener(SqlBaseListener):
         :param ctx:
         :return:
         """
+        LOGGER.info("exitRelationDefault :" + ctx.getText())
         if not self._current_col:
             return
 
@@ -158,6 +165,7 @@ class ColumnUsageListener(SqlBaseListener):
         :param ctx:
         :return:
         """
+        LOGGER.info("enterQuerySpecification :" + ctx.getText())
         if not self._processing_cols:
             return
 
@@ -174,7 +182,7 @@ class ColumnUsageListener(SqlBaseListener):
         :param ctx:
         :return:
         """
-
+        LOGGER.info("exitQuerySpecification :" + ctx.getText())
         if LOGGER.isEnabledFor(logging.DEBUG):
             LOGGER.debug('processing_cols: {}'.format(self._processing_cols))
             LOGGER.debug('processed_cols: {}'.format(self.processed_cols))
@@ -222,3 +230,41 @@ class ColumnUsageProvider(object):
         walker.walk(listener, parse_tree)
 
         return listener.processed_cols
+
+
+if __name__ == '__main__':
+    query = """
+SELECT cluster AS cluster,
+       date_trunc('day', CAST(ds AS TIMESTAMP)) AS __timestamp,
+       sum(p90_time) AS sum__p90_time
+FROM
+  (select ds,
+          cluster,
+          approx_percentile(latency_mins, .50) as p50_time,
+          approx_percentile(latency_mins, .60) as p60_time,
+          approx_percentile(latency_mins, .70) as p70_time,
+          approx_percentile(latency_mins, .75) as p75_time,
+          approx_percentile(latency_mins, .80) as p80_time,
+          approx_percentile(latency_mins, .90) as p90_time,
+          approx_percentile(latency_mins, .95) as p95_time
+   from
+     (SELECT ds,
+             cluster_name as cluster,
+             query_id,
+             date_diff('second',query_starttime,query_endtime)/60.0 as latency_mins
+      FROM etl.hive_query_logs
+      WHERE date(ds) > date_add('day', -60, current_date)
+        AND environment = 'production'
+        AND operation_name = 'QUERY' )
+   group by ds,
+            cluster
+   order by ds) AS expr_qry
+WHERE ds >= '2018-03-30 00:00:00'
+  AND ds <= '2018-05-29 23:29:57'
+GROUP BY cluster,
+         date_trunc('day', CAST(ds AS TIMESTAMP))
+ORDER BY sum__p90_time DESC
+LIMIT 5000
+"""
+    actual = ColumnUsageProvider.get_columns(query)
+    print(actual)
